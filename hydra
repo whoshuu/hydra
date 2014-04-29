@@ -1,0 +1,473 @@
+#!/usr/bin/env bash
+
+
+_echoerr() { echo "$(tput setaf 1)$@$(tput sgr 0)" 1>&2; }
+_echogreen() { echo "$(tput setaf 2)$@$(tput sgr 0)"; }
+_echoyellow() { echo "$(tput setaf 3)$@$(tput sgr 0)"; }
+_echosamegreen() { echo -ne "$(tput setaf 2)$@$(tput sgr 0)"; }
+
+PYTHON_VERSION=""
+HYDRA_HOME_DIRECTORY="$HOME/.hydra"
+PYTHON_DOWNLOAD_URL="https://www.python.org/ftp/python"
+PYTHON_DOWNLOAD_EXTENSION="tgz"
+WORKON_HOME="$HOME/.virtualenvs"
+
+
+function _hydra_exit {
+    if [[ "${BASH_SOURCE[0]}" != "${0}" ]]
+    then
+        return 1
+    else
+        exit
+    fi
+}
+
+# TODO Add packaging warnings for some of these
+LIST_PYTHON_VERSIONS=("2.0" "2.0.1"
+        "2.1" "2.1.1" "2.1.2" "2.1.3"
+        "2.2" "2.2.1" "2.2.2" "2.2.3"
+        "2.3" "2.3.1" "2.3.2" "2.3.3" "2.3.4" "2.3.5" "2.3.6" "2.3.7"
+        "2.4" "2.4.1" "2.4.2" "2.4.3" "2.4.4" "2.4.5" "2.4.6"
+        "2.5" "2.5.1" "2.5.2" "2.5.3" "2.5.4" "2.5.5" "2.5.6"
+        "2.6" "2.6.1" "2.6.1" "2.6.2" "2.6.3" "2.6.4" "2.6.5" "2.6.6" "2.6.7" "2.6.8" "2.6.9"
+        "2.7" "2.7.1" "2.7.1" "2.7.2" "2.7.3" "2.7.4" "2.7.5" "2.7.6"
+        "3.0" "3.0.1"
+        "3.1" "3.1.1" "3.1.2" "3.1.3" "3.1.4" "3.1.5"
+        "3.2" "3.2.1" "3.2.2" "3.2.3" "3.2.4" "3.2.5"
+        "3.3.0" "3.3.1" "3.3.2" "3.3.3" "3.3.4" "3.3.5"
+        "3.4.0")
+
+LIST_HYDRA_COMMANDS=("install" "uninstall" "list" "bootstrap" "wipe" "help")
+
+_hydra_progressfilt ()
+{
+    local flag=false c count cr=$'\r' nl=$'\n'
+    while IFS='' read -d '' -rn 1 c
+    do
+        if $flag
+        then
+            printf '%c' "$c"
+        else
+            if [[ $c != $cr && $c != $nl ]]
+            then
+                count=0
+            else
+                ((count++))
+                if ((count > 1))
+                then
+                    flag=true
+                fi
+            fi
+        fi
+    done
+}
+
+function _hydra_tab_completion {
+    if [ -n "$BASH" ]
+    then
+        _commands () {
+            local cur prev opts
+            COMPREPLY=()
+            cur="${COMP_WORDS[COMP_CWORD]}"
+            prev="${COMP_WORDS[COMP_CWORD-1]}"
+            opts="${LIST_HYDRA_COMMANDS[@]}"
+            list_opts="--all"
+            wipe_opts="--yes"
+            vers_opts="${LIST_PYTHON_VERSIONS[@]}"
+            if [[ "$prev" == *hydra* ]]
+            then
+                if [[ $cur == * ]]
+                then
+                    COMPREPLY=( $( compgen -W "${opts}" -- ${cur} ) )
+                    return 0
+                fi
+            elif [ "$prev" == "install" ]
+            then
+                COMPREPLY=( $( compgen -W "${vers_opts}" -- ${cur} ) )
+                return 0
+            elif [ "$prev" == "uninstall" ]
+            then
+                COMPREPLY=( $( compgen -W "$(find $HYDRA_HOME_DIRECTORY -maxdepth 1 -type d -not \
+                    -name ".*" 2>/dev/null | xargs -n1 basename 2>/dev/null)" -- ${cur} ) )
+                return 0
+            elif [ "$prev" == "list" ]
+            then
+                COMPREPLY=( $( compgen -W "${list_opts}" -- ${cur} ) )
+            elif [ "$prev" == "wipe" ]
+            then
+                COMPREPLY=( $( compgen -W "${wipe_opts}" -- ${cur} ) )
+            elif [ "$prev" == "bootstrap" ]
+            then
+                COMPREPLY=( $( compgen -W "$(find $WORKON_HOME -maxdepth 1 -type d -not -name ".*" \
+                    -not -name "hooks" 2>/dev/null | xargs -n1 basename 2>/dev/null)" -- ${cur} ) )
+            fi
+        }
+        complete -F _commands hydra
+    fi
+}
+function _hydra_confirm {
+    read -r -p "$(tput setaf 3)$1 [y/N]$(tput sgr 0) " response
+    case $response in
+        [yY][eE][sS]|[yY]) 
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+function _hydra_mktemp {
+    command \mktemp "$@"
+}
+
+function _hydra_tempfile {
+    typeset file
+    file="$(_hydra_mktemp -t hydra-python-XXXXXXXXXX)"
+    if [ $? -ne 0 ] || [ -z "$file" ] || [ ! -f "$file" ]
+    then
+        echo "ERROR: hydra could not create a temporary file name." 1>&2
+        return 1
+    fi
+    echo $file
+    return 0
+}
+
+function _hydra_tempdir {
+    typeset directory
+    directory="$(_hydra_mktemp -d -t hydra-python-XXXXXXXXXX)"
+    if [ $? -ne 0 ] || [ -z "$directory" ] || [ ! -d "$directory" ]
+    then
+        echo "ERROR: hydra could not create a temporary directory." 1>&2
+        return 1
+    fi
+    echo $directory
+    return 0
+}
+
+function _hydra_download_python {
+    version_found=0
+    for downloadable in ${LIST_PYTHON_VERSIONS[@]}
+    do
+        if [ "$PYTHON_VERSION" == "$downloadable" ]
+        then
+            version_found=1
+        fi
+    done       
+    if [ $version_found -eq 0 ]
+    then
+        _echoerr "No Python version found on the download server."
+        _hydra_exit
+    fi
+    _echogreen "Downloading Python-$PYTHON_VERSION... "
+    wget --progress=bar:force \
+            $PYTHON_DOWNLOAD_URL/$PYTHON_VERSION/Python-$PYTHON_VERSION.$PYTHON_DOWNLOAD_EXTENSION \
+            -O $1 2>&1 | _hydra_progressfilt
+    if [ ! -f $tarfile ] || [ $(wc -c $tarfile| awk '{print $1}') -eq 0 ]
+    then
+        _echoerr "File does not exist. Check your version!"
+        _hydra_exit
+    fi
+    echo -en "\e[1A"
+    echo -en "\e[1A"
+    echo -e "\033[2K"
+    echo -en "\e[1A"
+    echo -en "\e[1A"
+    _echogreen "Downloaded Python."
+}
+
+function _hydra_expand_python {
+    _echosamegreen "Unzipping Python-$PYTHON_VERSION... "
+    tar xfz $1 -C $2
+    _echogreen "Done!"
+}
+
+function _hydra_configure_python {
+    _echosamegreen "Configuring Python-$PYTHON_VERSION... "
+    CUR_DIR="$PWD"
+    cd $1/Python-$PYTHON_VERSION
+    ./configure --prefix=$HYDRA_HOME_DIRECTORY/$PYTHON_VERSION \
+            --exec-prefix=$HYDRA_HOME_DIRECTORY/$PYTHON_VERSION > /dev/null 2>&1
+    cd $CUR_DIR
+    _echogreen "Done!"
+}
+function _hydra_make_python {
+    _echosamegreen "Building Python-$PYTHON_VERSION... "
+    CUR_DIR="$PWD"
+    cd $1/Python-$PYTHON_VERSION
+    make > /dev/null 2>&1
+    cd $CUR_DIR
+    _echogreen "Done!"
+}
+
+function _hydra_make_install_python {
+    _echosamegreen "Installing Python-$PYTHON_VERSION... "
+    CUR_DIR="$PWD"
+    cd $1/Python-$PYTHON_VERSION
+    make install > /dev/null 2>&1
+    cd $CUR_DIR
+    _echogreen "Done!"
+}
+
+function _hydra_clean_temporary_directory {
+    _echosamegreen "Removing temporary files... "
+    rm -rf $1 $2
+    _echogreen "Done!"
+}
+
+function _hydra_install_check_python_version {
+    version_found=0
+    version=$1
+    for entry in $HYDRA_HOME_DIRECTORY/*
+    do
+        name=$(basename $entry)
+        if [ "$version" == "$name" ]
+        then
+            version_found=1
+        fi
+    done
+    if [ $version_found = 1 ]
+    then
+        _echoyellow "Already found a local Python with version $1, exiting."
+        _hydra_exit
+    else
+        _echogreen "Could not find a local Python with version $1, downloading and building it."
+        return 0
+    fi
+}
+
+function _hydra_uninstall_check_python_version {
+    version_found=0
+    version=$1
+    for entry in $HYDRA_HOME_DIRECTORY/*
+    do
+        name=$(basename $entry)
+        if [ "$version" == "$name" ]
+        then
+            version_found=1
+        fi
+    done
+    if [ $version_found = 1 ]
+    then
+        _echogreen "Found Python with version $1, preparing to uninstall."
+        return 0
+    else
+        _echoyellow "Could not find Python with version $1, exiting."
+        _hydra_exit
+    fi
+}
+
+function _hydra_check_symlinks {
+    symlink_found=0
+    version=$1
+    env_array=()
+    # TODO THIS IS BROKEN
+    if [[ $version == 2.* ]]
+    then
+        for entry in $(find $WORKON_HOME -lname \
+                $HYDRA_HOME_DIRECTORY/$PYTHON_VERSION/include/python2.7 2>/dev/null)
+        do
+            env_array+=("$(basename $(dirname $(dirname $entry)))")
+        done
+    else
+        for entry in $(find $WORKON_HOME -lname \
+                $HYDRA_HOME_DIRECTORY/$PYTHON_VERSION/include/python3.2m 2>/dev/null)
+        do
+            env_array+=("$(basename $(dirname $(dirname $entry)))")
+        done
+    fi
+    if [ ! ${#env_array[@]} -eq 0 ]; then
+        _echoyellow "The following virtual environments use symlinks to the Python version you're"\
+            "trying to uninstall:"
+        for env_name in ${env_array[@]}
+        do
+            _echoyellow "    $env_name"
+        done
+        _echoyellow "Uninstalling Python-$PYTHON_VERSION will corrupt these virtual environments."
+        read -r -p "$(tput setaf 3)Do you still wish to continue? [y/N]$(tput sgr 0) " response
+        if _hydra_confirm "Do you still wish to continue? "
+        then
+            return 0
+        else
+            _echogreen "Keeping Python-$PYTHON_VERSION safe."
+            _hydra_exit
+        fi
+    else
+        return 0
+    fi
+}
+
+function _hydra_delete_python {
+    rm -rf $HYDRA_HOME_DIRECTORY/$1
+}
+
+function _hydra_list {
+    if [ ! -d $HYDRA_HOME_DIRECTORY ]
+    then
+        echo "No versions of Python have been installed by hydra."
+        _hydra_exit
+    fi
+    if [ "$1" == "-a" ] || [ "$1" == "--all" ]
+    then
+        echo "Versions marked with a (*) are currently installed."
+        for version in ${LIST_PYTHON_VERSIONS[@]}
+        do
+            for entry in $HYDRA_HOME_DIRECTORY/*
+            do
+                name=$(basename $entry)
+                if [ "$name" == "$version" ]
+                then
+                    version="$version (*)"
+                fi
+            done
+            printf "%-8s\n" "${version}"
+        done | column
+    else
+        if [ "$(ls $HYDRA_HOME_DIRECTORY)" == "" ]
+        then
+            echo "No versions of Python have been installed by hydra."
+            _hydra_exit
+        fi
+        for entry in $(ls $HYDRA_HOME_DIRECTORY)
+        do
+            echo "$entry"
+        done
+    fi
+}
+
+function _hydra_wipe_all {
+    if [ "$1" == "-y" ] || [ "$1" == "--yes" ]
+    then
+        _echoyellow "Deleted everything."
+        rm -rf /tmp/hydra*
+        rm -rf $HYDRA_HOME_DIRECTORY
+        _hydra_exit
+    else
+        if _hydra_confirm "Are you sure?"
+        then
+            _echoyellow "Deleted everything."
+            rm -rf /tmp/hydra*
+            rm -rf $HYDRA_HOME_DIRECTORY
+            _hydra_exit
+        else
+            _echogreen "Your pythons are safe with me."
+            _hydra_exit
+        fi
+    fi
+}
+
+function _hydra_install {
+    typeset tarfile
+    typeset tardir
+    if [ -n "$1" ]
+    then
+        PYTHON_VERSION=$1
+    else
+        _echoyellow "Please specify a version of Python to install."
+        _echoyellow "   Example: hydra install 2.7.6"
+        _hydra_exit
+    fi
+    _hydra_install_check_python_version $PYTHON_VERSION || return 1
+    tarfile="$(_hydra_tempfile)"
+    tardir="$(_hydra_tempdir)"
+    _hydra_download_python $tarfile || return 1
+    _hydra_expand_python $tarfile $tardir || return 1
+    _hydra_configure_python $tardir || return 1
+    _hydra_make_python $tardir || return 1
+    _hydra_make_install_python $tardir || return 1
+    _hydra_clean_temporary_directory $tarfile $tardir || return 1
+    _echogreen "Successfully installed in $HYDRA_HOME_DIRECTORY/$PYTHON_VERSION!"
+    return 0
+}
+
+function _hydra_uninstall {
+    typeset tarfile
+    typeset tardir
+    if [ -n "$1" ]
+    then
+        PYTHON_VERSION=$1
+    else
+        _echoyellow "Specify a Python version number to uninstall."
+        _echoyellow "   Example: hydra uninstall 2.7.6"
+        _hydra_exit
+    fi
+    _hydra_uninstall_check_python_version $PYTHON_VERSION || return 1
+    _hydra_check_symlinks $PYTHON_VERSION || return 1
+    _hydra_delete_python $PYTHON_VERSION || return 1
+    _echogreen "Successfully uninstalled $HYDRA_HOME_DIRECTORY/$PYTHON_VERSION!"
+    return 0
+}
+
+function _hydra_bootstrap {
+    if [ ! -n "$1" ]
+    then
+        _echoyellow "Specify a virtualenv to bootstrap into."
+        _echoyellow "   Example: hydra bootstrap base"
+        _hydra_exit
+    fi
+    if [ ! -d "$WORKON_HOME/$1/bin" ]
+    then
+        _echoyellow "$WORKON_HOME/$1/bin does not exist. Check to make sure you have a virtualenv"\
+                "named \"$1\"."
+        _hydra_exit
+    fi
+    if [ -f "$WORKON_HOME/$1/bin/hydra" ]
+    then
+        _echoyellow "Script has already been installed to $WORKON_HOME/$1/bin."
+        _hydra_exit
+    fi
+    _echogreen "Installing this script into $WORKON_HOME/$1/bin."
+    mv $0 $WORKON_HOME/$1/bin
+}
+
+function _hydra_help {
+    echo $1
+    return 0
+}
+
+function hydra {
+    [ ! -n "$1" ] && {
+        _echoerr "Use hydra with a command as in:"
+        _echoerr "    hydra install [version]"
+        _echoerr "    hydra uninstall [version]"
+        _echoerr "    hydra list [--all]"
+        return 1
+    }
+    action_found=0
+    for action in ${LIST_HYDRA_COMMANDS[@]}
+    do
+        if [ "$1" == "$action" ]
+        then
+            action_found=1
+        fi
+    done 
+    [ $action_found -eq 0 ] && {
+        _echoerr "Invalid command! Use hydra with a command as in:"
+        _echoerr "    hydra install [version]"
+        _echoerr "    hydra uninstall [version]"
+        _echoerr "    hydra list [--all]"
+        return 1
+    }
+    if [ "$1" = "install" ]
+    then
+        _hydra_install $2
+    elif [ "$1" = "uninstall" ]
+    then
+        _hydra_uninstall $2
+    elif [ "$1" = "list" ]
+    then
+        _hydra_list $2
+    elif [ "$1" = "wipe" ]
+    then
+        _hydra_wipe_all $2
+    elif [ "$1" = "bootstrap" ]
+    then
+        _hydra_bootstrap $2
+    elif [ "$1" = "help" ]
+    then
+        _hydra_help $2
+    fi
+}
+
+_hydra_tab_completion
+[[ "${BASH_SOURCE[0]}" == "${0}" ]] && hydra $@
