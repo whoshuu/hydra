@@ -1,5 +1,7 @@
 # hydra
 
+<img align="right" height="300" src="http://i.imgur.com/oXwQU0E.png">
+
 A script for managing Python versions. This tool lets you keep all of your development versions of Python in a single location that is accessible even without `root` privileges. Hydra lets you bootstrap a new development machine quickly and painlessly, with as few dependencies as possible and without ever reaching into `sudo` territory.
 
 ## Installing
