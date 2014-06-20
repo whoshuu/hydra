@@ -24,13 +24,13 @@ Optionally, since `PATH`'s are usually in only `root`-accessible, you can simply
 > hydra install [version]
 ```
 
-Installs the specified version of Python into your `HYDRA_HOME_DIRECTORY`, which by default is `$HOME/.hydra`. For instance, calling `hydra install 2.7.6` will download and compile `Python-2.7.6` into a directory called `2.7.6` in `HYDRA_HOME_DIRECTORY`. The Python executable will be available in the `bin` subdirectory.
+Installs the specified version of Python into your `HYDRA_HOME`, which by default is `$HOME/.hydra`. For instance, calling `hydra install 2.7.6` will download and compile `Python-2.7.6` into a directory called `2.7.6` in `HYDRA_HOME`. The Python executable will be available in the `bin` subdirectory.
 
 ```bash
 > hydra uninstall [version]
 ```
 
-Uninstalls the specified version of Python from your `HYDRA_HOME_DIRECTORY`. For instance, calling `hydra uninstall 2.7.6` will delete the directory called `2.7.6` from `HYDRA_HOME_DIRECTORY`. If a virtualenv is found to be using links to libraries or modules in that directory, confirmation of the deletion will be required.
+Uninstalls the specified version of Python from your `HYDRA_HOME`. For instance, calling `hydra uninstall 2.7.6` will delete the directory called `2.7.6` from `HYDRA_HOME`. If a virtualenv is found to be using links to libraries or modules in that directory, confirmation of the deletion will be required.
 
 ```bash
 > hydra list

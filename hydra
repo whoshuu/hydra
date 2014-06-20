@@ -7,7 +7,7 @@ _echoyellow() { echo "$(tput setaf 3)$@$(tput sgr 0)"; }
 _echosamegreen() { echo -ne "$(tput setaf 2)$@$(tput sgr 0)"; }
 
 PYTHON_VERSION=""
-HYDRA_HOME_DIRECTORY="$HOME/.hydra"
+HYDRA_HOME="$HOME/.hydra"
 PYTHON_DOWNLOAD_URL="https://www.python.org/ftp/python"
 PYTHON_DOWNLOAD_EXTENSION="tgz"
 WORKON_HOME="$HOME/.virtualenvs"
@@ -87,7 +87,7 @@ function _hydra_tab_completion {
                 return 0
             elif [ "$prev" == "uninstall" ]
             then
-                COMPREPLY=( $( compgen -W "$(find $HYDRA_HOME_DIRECTORY -maxdepth 1 -type d -not \
+                COMPREPLY=( $( compgen -W "$(find $HYDRA_HOME -maxdepth 1 -type d -not \
                     -name ".*" 2>/dev/null | xargs -n1 basename 2>/dev/null)" -- ${cur} ) )
                 return 0
             elif [ "$prev" == "list" ]
@@ -186,8 +186,8 @@ function _hydra_configure_python {
     _echosamegreen "Configuring Python-$PYTHON_VERSION... "
     CUR_DIR="$PWD"
     cd $1/Python-$PYTHON_VERSION
-    ./configure --prefix=$HYDRA_HOME_DIRECTORY/$PYTHON_VERSION \
-            --exec-prefix=$HYDRA_HOME_DIRECTORY/$PYTHON_VERSION > /dev/null 2>&1
+    ./configure --prefix=$HYDRA_HOME/$PYTHON_VERSION \
+            --exec-prefix=$HYDRA_HOME/$PYTHON_VERSION > /dev/null 2>&1
     cd $CUR_DIR
     _echogreen "Done!"
 }
@@ -218,7 +218,7 @@ function _hydra_clean_temporary_directory {
 function _hydra_install_check_python_version {
     version_found=0
     version=$1
-    for entry in $HYDRA_HOME_DIRECTORY/*
+    for entry in $HYDRA_HOME/*
     do
         name=$(basename $entry)
         if [ "$version" == "$name" ]
@@ -239,7 +239,7 @@ function _hydra_install_check_python_version {
 function _hydra_uninstall_check_python_version {
     version_found=0
     version=$1
-    for entry in $HYDRA_HOME_DIRECTORY/*
+    for entry in $HYDRA_HOME/*
     do
         name=$(basename $entry)
         if [ "$version" == "$name" ]
@@ -265,13 +265,13 @@ function _hydra_check_symlinks {
     if [[ $version == 2.* ]]
     then
         for entry in $(find $WORKON_HOME -lname \
-                $HYDRA_HOME_DIRECTORY/$PYTHON_VERSION/include/python2.7 2>/dev/null)
+                $HYDRA_HOME/$PYTHON_VERSION/include/python2.7 2>/dev/null)
         do
             env_array+=("$(basename $(dirname $(dirname $entry)))")
         done
     else
         for entry in $(find $WORKON_HOME -lname \
-                $HYDRA_HOME_DIRECTORY/$PYTHON_VERSION/include/python3.2m 2>/dev/null)
+                $HYDRA_HOME/$PYTHON_VERSION/include/python3.2m 2>/dev/null)
         do
             env_array+=("$(basename $(dirname $(dirname $entry)))")
         done
@@ -298,11 +298,11 @@ function _hydra_check_symlinks {
 }
 
 function _hydra_delete_python {
-    rm -rf $HYDRA_HOME_DIRECTORY/$1
+    rm -rf $HYDRA_HOME/$1
 }
 
 function _hydra_list {
-    if [ ! -d $HYDRA_HOME_DIRECTORY ]
+    if [ ! -d $HYDRA_HOME ]
     then
         echo "No versions of Python have been installed by hydra."
         _hydra_exit
@@ -312,7 +312,7 @@ function _hydra_list {
         echo "Versions marked with a (*) are currently installed."
         for version in ${LIST_PYTHON_VERSIONS[@]}
         do
-            for entry in $HYDRA_HOME_DIRECTORY/*
+            for entry in $HYDRA_HOME/*
             do
                 name=$(basename $entry)
                 if [ "$name" == "$version" ]
@@ -323,12 +323,12 @@ function _hydra_list {
             printf "%-8s\n" "${version}"
         done | column
     else
-        if [ "$(ls $HYDRA_HOME_DIRECTORY)" == "" ]
+        if [ "$(ls $HYDRA_HOME 2>/dev/null)" == "" ]
         then
             echo "No versions of Python have been installed by hydra."
             _hydra_exit
         fi
-        for entry in $(ls $HYDRA_HOME_DIRECTORY)
+        for entry in $(ls $HYDRA_HOME 2>/dev/null)
         do
             echo "$entry"
         done
@@ -376,7 +376,7 @@ function _hydra_install {
     _hydra_make_python $tardir || return 1
     _hydra_make_install_python $tardir || return 1
     _hydra_clean_temporary_directory $tarfile $tardir || return 1
-    _echogreen "Successfully installed in $HYDRA_HOME_DIRECTORY/$PYTHON_VERSION!"
+    _echogreen "Successfully installed in $HYDRA_HOME/$PYTHON_VERSION!"
     return 0
 }
 
@@ -394,7 +394,7 @@ function _hydra_uninstall {
     _hydra_uninstall_check_python_version $PYTHON_VERSION || return 1
     _hydra_check_symlinks $PYTHON_VERSION || return 1
     _hydra_delete_python $PYTHON_VERSION || return 1
-    _echogreen "Successfully uninstalled $HYDRA_HOME_DIRECTORY/$PYTHON_VERSION!"
+    _echogreen "Successfully uninstalled $HYDRA_HOME/$PYTHON_VERSION!"
     return 0
 }
 
