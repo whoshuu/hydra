@@ -154,7 +154,7 @@ function _hydra_download_python {
     if [ $version_found -eq 0 ]
     then
         _echoerr "No Python version found on the download server."
-        _hydra_exit
+        [ _hydra_exit ] && return 1
     fi
     _echogreen "Downloading Python-$PYTHON_VERSION... "
     wget --progress=bar:force \
@@ -163,7 +163,7 @@ function _hydra_download_python {
     if [ ! -f $tarfile ] || [ $(wc -c $tarfile| awk '{print $1}') -eq 0 ]
     then
         _echoerr "File does not exist. Check your version!"
-        _hydra_exit
+        [ _hydra_exit ] && return 1
     fi
     echo -en "\e[1A"
     echo -en "\e[1A"
@@ -226,7 +226,7 @@ function _hydra_install_check_python_version {
     if [ $version_found = 1 ]
     then
         _echoyellow "Already found a local Python with version $1, exiting."
-        _hydra_exit
+        [ _hydra_exit ] && return 1
     else
         _echogreen "Could not find a local Python with version $1, downloading and building it."
         return 0
@@ -250,7 +250,7 @@ function _hydra_uninstall_check_python_version {
         return 0
     else
         _echoyellow "Could not find Python with version $1, exiting."
-        _hydra_exit
+        [ _hydra_exit ] && return 1
     fi
 }
 
@@ -287,7 +287,7 @@ function _hydra_check_symlinks {
             return 0
         else
             _echogreen "Keeping Python-$PYTHON_VERSION safe."
-            _hydra_exit
+            [ _hydra_exit ] && return 1
         fi
     else
         return 0
@@ -302,7 +302,7 @@ function _hydra_list {
     if [ ! -d $HYDRA_HOME ]
     then
         echo "No versions of Python have been installed by hydra."
-        _hydra_exit
+        [ _hydra_exit ] && return 1
     fi
     if [ "$1" == "-a" ] || [ "$1" == "--all" ]
     then
@@ -323,7 +323,7 @@ function _hydra_list {
         if [ "$(ls $HYDRA_HOME 2>/dev/null)" == "" ]
         then
             echo "No versions of Python have been installed by hydra."
-            _hydra_exit
+            [ _hydra_exit ] && return 1
         fi
         for entry in $(ls $HYDRA_HOME 2>/dev/null)
         do
@@ -341,7 +341,7 @@ function _hydra_install {
     else
         _echoyellow "Please specify a version of Python to install."
         _echoyellow "   Example: hydra install 2.7.6"
-        _hydra_exit
+        [ _hydra_exit ] && return 1
     fi
     _hydra_install_check_python_version $PYTHON_VERSION || return 1
     tarfile="$(_hydra_tempfile)"
@@ -365,7 +365,7 @@ function _hydra_uninstall {
     else
         _echoyellow "Specify a Python version number to uninstall."
         _echoyellow "   Example: hydra uninstall 2.7.6"
-        _hydra_exit
+        [ _hydra_exit ] && return 1
     fi
     _hydra_uninstall_check_python_version $PYTHON_VERSION || return 1
     _hydra_check_symlinks $PYTHON_VERSION || return 1
